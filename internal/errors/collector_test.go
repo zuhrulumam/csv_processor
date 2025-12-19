@@ -61,18 +61,23 @@ func TestCollector_ErrorThreshold(t *testing.T) {
 	record := models.NewRecord(1, "test.csv", []string{"data"}, nil)
 
 	// Process 10 records, fail on 2nd (20% error rate)
+	collector.IncrementProcessed()
+	collector.IncrementProcessed()
+	collector.IncrementProcessed()
+	collector.IncrementProcessed()
+	collector.IncrementProcessed()
+	collector.IncrementProcessed()
+	collector.IncrementProcessed()
+	collector.IncrementProcessed()
+	collector.IncrementProcessed()
+	collector.IncrementProcessed()
 
 	err := collector.Add(errors.New("error 1"), record)
 	if err != nil {
 		t.Errorf("Add() returned error: %v", err)
 	}
 
-	collector.IncrementProcessed()
-	collector.IncrementProcessed()
-	collector.IncrementProcessed()
-	collector.IncrementProcessed()
-
-	// This should exceed threshold (1 error in 5 processed = 20% > 10%)
+	// This should exceed threshold (2 error in 10 processed = 20% > 10%)
 	err = collector.Add(errors.New("error 2"), record)
 	if err == nil {
 		t.Error("expected error when threshold exceeded")
