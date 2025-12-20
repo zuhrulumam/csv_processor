@@ -1,6 +1,8 @@
 package models
 
 import (
+	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -78,74 +80,119 @@ func (r *Result) IsFailed() bool {
 
 // Summary represents aggregated processing results
 type Summary struct {
-	// TotalRecords is the total number of records processed
-	TotalRecords int
+	// Atomic counters
+	totalRecords uint64
+	successCount uint64
+	failedCount  uint64
+	skippedCount uint64
 
-	// SuccessCount is the number of successfully processed records
-	SuccessCount int
-
-	// FailedCount is the number of failed records
-	FailedCount int
-
-	// SkippedCount is the number of skipped records
-	SkippedCount int
-
-	// StartTime is when processing started
-	StartTime time.Time
-
-	// EndTime is when processing completed
-	EndTime time.Time
-
-	// Duration is the total processing time
-	Duration time.Duration
-
-	// Throughput is records processed per second
-	Throughput float64
+	// Mutex protects time-related fields
+	mu         sync.RWMutex
+	startTime  time.Time
+	endTime    time.Time
+	duration   time.Duration
+	throughput float64
 }
 
 // NewSummary creates a new Summary instance
 func NewSummary() *Summary {
 	return &Summary{
-		StartTime: time.Now(),
+		startTime: time.Now(),
 	}
 }
 
-// AddResult updates the summary with a new result
+// AddResult updates the summary with a new result (thread-safe)
 func (s *Summary) AddResult(result *Result) {
-	s.TotalRecords++
+	atomic.AddUint64(&s.totalRecords, 1)
 
 	switch result.Status {
 	case StatusSuccess:
-		s.SuccessCount++
+		atomic.AddUint64(&s.successCount, 1)
 	case StatusFailed:
-		s.FailedCount++
+		atomic.AddUint64(&s.failedCount, 1)
 	case StatusSkipped:
-		s.SkippedCount++
+		atomic.AddUint64(&s.skippedCount, 1)
 	}
 }
 
 // Finalize completes the summary calculation
 func (s *Summary) Finalize() {
-	s.EndTime = time.Now()
-	s.Duration = s.EndTime.Sub(s.StartTime)
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	if s.Duration.Seconds() > 0 {
-		s.Throughput = float64(s.TotalRecords) / s.Duration.Seconds()
+	s.endTime = time.Now()
+	s.duration = s.endTime.Sub(s.startTime)
+
+	if s.duration.Seconds() > 0 {
+		total := atomic.LoadUint64(&s.totalRecords)
+		s.throughput = float64(total) / s.duration.Seconds()
 	}
+}
+
+// TotalRecords returns total records processed
+func (s *Summary) TotalRecords() int {
+	return int(atomic.LoadUint64(&s.totalRecords))
+}
+
+// SuccessCount returns successful records
+func (s *Summary) SuccessCount() int {
+	return int(atomic.LoadUint64(&s.successCount))
+}
+
+// FailedCount returns failed records
+func (s *Summary) FailedCount() int {
+	return int(atomic.LoadUint64(&s.failedCount))
+}
+
+// SkippedCount returns skipped records
+func (s *Summary) SkippedCount() int {
+	return int(atomic.LoadUint64(&s.skippedCount))
+}
+
+// StartTime returns the start time
+func (s *Summary) StartTime() time.Time {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.startTime
+}
+
+// EndTime returns the end time
+func (s *Summary) EndTime() time.Time {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.endTime
+}
+
+// Duration returns the total duration
+func (s *Summary) Duration() time.Duration {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.duration
+}
+
+// Throughput returns records per second
+func (s *Summary) Throughput() float64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.throughput
 }
 
 // SuccessRate returns the percentage of successful records
 func (s *Summary) SuccessRate() float64 {
-	if s.TotalRecords == 0 {
+	total := atomic.LoadUint64(&s.totalRecords)
+	if total == 0 {
 		return 0
 	}
-	return float64(s.SuccessCount) / float64(s.TotalRecords) * 100
+	success := atomic.LoadUint64(&s.successCount)
+	return float64(success) / float64(total) * 100
 }
 
 // FailureRate returns the percentage of failed records
 func (s *Summary) FailureRate() float64 {
-	if s.TotalRecords == 0 {
+	total := atomic.LoadUint64(&s.totalRecords)
+	if total == 0 {
 		return 0
 	}
-	return float64(s.FailedCount) / float64(s.TotalRecords) * 100
+	failed := atomic.LoadUint64(&s.failedCount)
+	return float64(failed) / float64(total) * 100
 }

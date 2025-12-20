@@ -28,6 +28,9 @@ type Pool struct {
 	// errorCh sends errors that occur during processing
 	errorCh chan error
 
+	// Mutex protects ctx and cancel
+	ctxMu sync.RWMutex
+
 	// wg waits for all workers to complete
 	wg sync.WaitGroup
 
@@ -127,8 +130,12 @@ func (p *Pool) worker(id int) {
 	defer p.wg.Done()
 
 	for {
+		p.ctxMu.RLock()
+		ctx := p.ctx
+		p.ctxMu.RUnlock()
+
 		select {
-		case <-p.ctx.Done():
+		case <-ctx.Done():
 			// Context canceled, stop processing
 			return
 
@@ -144,7 +151,7 @@ func (p *Pool) worker(id int) {
 			// Send result to output channel (non-blocking)
 			select {
 			case p.outputCh <- result:
-			case <-p.ctx.Done():
+			case <-ctx.Done():
 				return
 			}
 		}
@@ -155,8 +162,12 @@ func (p *Pool) worker(id int) {
 func (p *Pool) processRecord(record *models.Record) *models.Result {
 	startTime := time.Now()
 
+	p.ctxMu.RLock()
+	ctx := p.ctx
+	p.ctxMu.RUnlock()
+
 	// Process with context
-	result, err := p.processor.Process(p.ctx, record)
+	result, err := p.processor.Process(ctx, record)
 
 	duration := time.Since(startTime)
 
@@ -192,7 +203,13 @@ func (p *Pool) Errors() <-chan error {
 
 // Stop gracefully stops the pool and waits for workers to finish
 func (p *Pool) Stop() {
-	p.cancel()
+	p.ctxMu.Lock()
+	cancel := p.cancel
+	p.ctxMu.Unlock()
+
+	if cancel != nil {
+		cancel()
+	}
 }
 
 // Wait waits for all workers to complete

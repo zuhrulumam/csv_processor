@@ -189,8 +189,6 @@ func (r *CSVReader) readFile(
 			headers,
 		)
 
-		fmt.Println(record)
-
 		// Send record to channel (with context cancellation check)
 		select {
 		case <-ctx.Done():

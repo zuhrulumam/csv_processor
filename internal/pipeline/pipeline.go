@@ -17,16 +17,19 @@ import (
 	"github.com/zuhrulumam/csv_processor/internal/worker"
 )
 
-// Pipeline orchestrates the entire CSV processing workflow
 type Pipeline struct {
 	// Configuration
 	config Config
 
 	// Components
-	reader     *reader.CSVReader
+	reader *reader.CSVReader
+
+	// Mutex protects workerPool
+	poolMu     sync.RWMutex
 	workerPool *worker.Pool
-	progress   *tracker.ProgressTracker
-	errorCol   *errors.Collector
+
+	progress *tracker.ProgressTracker
+	errorCol *errors.Collector
 
 	// Context and cancellation
 	ctx    context.Context
@@ -34,9 +37,6 @@ type Pipeline struct {
 
 	// Summary
 	summary *models.Summary
-
-	// Mutex for summary updates
-	mu sync.Mutex
 }
 
 // Config holds pipeline configuration
@@ -131,13 +131,18 @@ func (p *Pipeline) Run() error {
 	recordCh, readerErrCh := p.reader.Read(p.ctx)
 
 	// Create worker pool
-	p.workerPool = worker.NewPool(worker.Config{
+	pool := worker.NewPool(worker.Config{
 		Workers:          p.config.Workers,
 		Processor:        p.config.Processor,
 		InputChannel:     recordCh,
 		OutputBufferSize: p.config.BufferSize,
 		ErrorBufferSize:  10,
 	})
+
+	// Store pool with mutex protection
+	p.poolMu.Lock()
+	p.workerPool = pool
+	p.poolMu.Unlock()
 
 	// Start worker pool
 	if err := p.workerPool.Start(); err != nil {
@@ -184,20 +189,26 @@ func (p *Pipeline) Run() error {
 
 // handleResults processes results from workers
 func (p *Pipeline) handleResults() {
-	for result := range p.workerPool.Results() {
+	p.poolMu.RLock()
+	pool := p.workerPool
+	p.poolMu.RUnlock()
+
+	if pool == nil {
+		return
+	}
+
+	for result := range pool.Results() {
 		// Update progress
 		if p.config.ShowProgress {
 			p.progress.RecordProcessed(result)
 		}
 
-		// Update summary
-		p.mu.Lock()
+		// Update summary (thread-safe with atomics + mutex)
 		p.summary.AddResult(result)
-		p.mu.Unlock()
 
 		// Collect errors
 		if result.IsFailed() && result.Error != nil {
-			_ = p.errorCol.Add(result.Error, result.Record)
+			p.errorCol.Add(result.Error, result.Record)
 		}
 
 		// Update error collector processed count
@@ -206,7 +217,6 @@ func (p *Pipeline) handleResults() {
 		// Check if we should abort
 		select {
 		case <-p.errorCol.Context().Done():
-			// Error threshold exceeded, initiate shutdown
 			p.cancel()
 			return
 		default:
@@ -233,7 +243,15 @@ func (p *Pipeline) handleReaderErrors(errCh <-chan error) {
 
 // handleWorkerErrors handles errors from the worker pool
 func (p *Pipeline) handleWorkerErrors() {
-	for err := range p.workerPool.Errors() {
+	p.poolMu.RLock()
+	pool := p.workerPool
+	p.poolMu.RUnlock()
+
+	if pool == nil {
+		return
+	}
+
+	for err := range pool.Errors() {
 		p.errorCol.Add(err, nil)
 	}
 }
@@ -286,9 +304,6 @@ func (p *Pipeline) finalize() {
 
 // Summary returns the processing summary
 func (p *Pipeline) Summary() *models.Summary {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
 	return p.summary
 }
 
@@ -301,8 +316,12 @@ func (p *Pipeline) Errors() *errors.Collector {
 func (p *Pipeline) Stop() {
 	p.cancel()
 
-	if p.workerPool != nil {
-		p.workerPool.StopAndWait()
+	p.poolMu.RLock()
+	pool := p.workerPool
+	p.poolMu.RUnlock()
+
+	if pool != nil {
+		pool.StopAndWait()
 	}
 }
 

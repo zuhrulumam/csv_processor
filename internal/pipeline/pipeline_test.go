@@ -42,12 +42,12 @@ func TestPipeline_BasicExecution(t *testing.T) {
 	// Verify summary
 	summary := pipe.Summary()
 
-	if summary.TotalRecords != 3 {
-		t.Errorf("expected 3 records, got %d", summary.TotalRecords)
+	if summary.TotalRecords() != 3 {
+		t.Errorf("expected 3 records, got %d", summary.TotalRecords())
 	}
 
-	if summary.SuccessCount != 3 {
-		t.Errorf("expected 3 successful, got %d", summary.SuccessCount)
+	if summary.SuccessCount() != 3 {
+		t.Errorf("expected 3 successful, got %d", summary.SuccessCount())
 	}
 }
 
@@ -87,8 +87,8 @@ func TestPipeline_MultipleFiles(t *testing.T) {
 	summary := pipe.Summary()
 
 	expectedRecords := 9 // 3 files × 3 records each
-	if summary.TotalRecords != expectedRecords {
-		t.Errorf("expected %d records, got %d", expectedRecords, summary.TotalRecords)
+	if summary.TotalRecords() != expectedRecords {
+		t.Errorf("expected %d records, got %d", expectedRecords, summary.TotalRecords())
 	}
 }
 
@@ -163,7 +163,8 @@ func TestPipeline_GracefulShutdown(t *testing.T) {
 	// Wait until some work has started
 	deadline := time.After(2 * time.Second)
 	for {
-		if pipe.Summary().TotalRecords > 0 {
+		summary := pipe.Summary()
+		if summary.TotalRecords() > 0 {
 			break
 		}
 		select {
@@ -186,15 +187,15 @@ func TestPipeline_GracefulShutdown(t *testing.T) {
 	summary := pipe.Summary()
 
 	// Should have processed some records but not all
-	if summary.TotalRecords == 0 {
+	if summary.TotalRecords() == 0 {
 		t.Error("expected some records to be processed")
 	}
 
-	if summary.TotalRecords >= 10000 {
+	if summary.TotalRecords() >= 10000 {
 		t.Error("pipeline did not stop gracefully")
 	}
 
-	t.Logf("Processed %d records before shutdown", summary.TotalRecords)
+	t.Logf("Processed %d records before shutdown", summary.TotalRecords())
 }
 
 func TestPipeline_OutputFile(t *testing.T) {
