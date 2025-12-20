@@ -1,0 +1,77 @@
+# Development Dockerfile with hot reload support
+FROM golang:1.24-alpine
+
+# Install development tools
+RUN apk add --no-cache git make gcc musl-dev
+
+# Install air for hot reload (optional)
+RUN go install github.com/cosmtrek/air@latest
+
+# Set working directory
+WORKDIR /app
+
+# Copy go mod files
+COPY go.mod go.sum ./
+
+# Download dependencies
+RUN go mod download
+
+# Copy source code
+COPY . .
+
+# Expose any ports if needed (none for CLI app)
+# EXPOSE 8080
+
+# Default command
+CMD ["go", "run", "./cmd/processor", "--help"]
+```
+
+### File 4: `.dockerignore`
+```
+# Git
+.git
+.gitignore
+.github
+
+# Build artifacts
+processor
+processor_unix
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test artifacts
+*.test
+*.out
+coverage.out
+coverage.html
+
+# Dependencies
+vendor/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Documentation (optional - include if you want docs in image)
+# README.md
+# docs/
+
+# Examples (will be mounted as volumes)
+examples/output/*
+
+# Test data
+test/fixtures/*.csv

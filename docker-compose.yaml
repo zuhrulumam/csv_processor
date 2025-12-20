@@ -1,0 +1,68 @@
+version: '3.8'
+
+services:
+  processor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: csv-processor:latest
+    container_name: csv-processor
+    volumes:
+      # Mount input/output directories
+      - ./examples/input:/data/input:ro
+      - ./examples/output:/data/output
+    environment:
+      - TZ=UTC
+    # Override default command for processing
+    command: >
+      -workers 4
+      -progress
+      -output /data/output/results.csv
+      /data/input/sample.csv
+    restart: "no"
+    
+  # Development service with live code mounting
+  processor-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    image: csv-processor:dev
+    container_name: csv-processor-dev
+    volumes:
+      - .:/app
+      - ./examples/input:/data/input:ro
+      - ./examples/output:/data/output
+    environment:
+      - TZ=UTC
+      - GO111MODULE=on
+    working_dir: /app
+    command: go run ./cmd/processor -workers 4 /data/input/sample.csv
+    restart: "no"
+
+  # Service for running tests
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder
+    image: csv-processor:test
+    container_name: csv-processor-test
+    volumes:
+      - .:/build
+    working_dir: /build
+    command: make test
+    restart: "no"
+
+  # Benchmark service
+  bench:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder
+    image: csv-processor:bench
+    container_name: csv-processor-bench
+    volumes:
+      - .:/build
+    working_dir: /build
+    command: make bench
+    restart: "no"

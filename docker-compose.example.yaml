@@ -1,0 +1,56 @@
+# Example docker-compose configuration for batch processing
+
+version: '3.8'
+
+services:
+  # Process single file
+  process-single:
+    image: csv-processor:latest
+    volumes:
+      - ./examples/input:/data/input:ro
+      - ./examples/output:/data/output
+    command: >
+      -workers 8
+      -progress
+      -verbose
+      -output /data/output/single-result.csv
+      /data/input/sample.csv
+
+  # Process multiple files
+  process-batch:
+    image: csv-processor:latest
+    volumes:
+      - ./examples/input:/data/input:ro
+      - ./examples/output:/data/output
+    command: >
+      -workers 16
+      -progress
+      -output /data/output/batch-result.csv
+      /data/input/file1.csv
+      /data/input/file2.csv
+      /data/input/file3.csv
+
+  # Process with error threshold
+  process-with-threshold:
+    image: csv-processor:latest
+    volumes:
+      - ./examples/input:/data/input:ro
+      - ./examples/output:/data/output
+    command: >
+      -workers 4
+      -error-threshold 0.1
+      -abort-on-error
+      -output /data/output/filtered-result.csv
+      /data/input/sample.csv
+
+  # Quiet mode for automation
+  process-quiet:
+    image: csv-processor:latest
+    volumes:
+      - ./examples/input:/data/input:ro
+      - ./examples/output:/data/output
+    command: >
+      -quiet
+      -workers 8
+      -output /data/output/automated-result.csv
+      /data/input/sample.csv

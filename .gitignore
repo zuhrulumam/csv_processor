@@ -2,3 +2,4 @@ vendor/
 *.csv
 coverage.out
 processor
+!examples/input/*.csv

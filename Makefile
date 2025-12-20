@@ -52,9 +52,32 @@ lint:
 
 # Docker targets
 docker-build:
-	docker build -t csv-processor:$(VERSION) .
+	docker build -t csv-processor:latest .
+
+docker-build-dev:
+	docker build -f Dockerfile.dev -t csv-processor:dev .
 
 docker-run:
-	docker run --rm -v $(PWD)/examples:/data csv-processor:$(VERSION)
+	./scripts/docker-run.sh
 
-.PHONY: all build build-linux test test-coverage bench clean run deps lint docker-build docker-run
+docker-test:
+	docker run --rm -v $(PWD):/build -w /build golang:1.21-alpine sh -c "go mod download && go test -v -race ./..."
+
+docker-clean:
+	docker rmi csv-processor:latest csv-processor:dev || true
+
+docker-compose-up:
+	docker-compose up processor
+
+docker-compose-test:
+	docker-compose up test
+
+docker-compose-down:
+	docker-compose down
+
+# Make scripts executable
+setup-scripts:
+	chmod +x scripts/*.sh
+
+.PHONY: docker-build docker-build-dev docker-run docker-test docker-clean \
+        docker-compose-up docker-compose-test docker-compose-down setup-scripts
